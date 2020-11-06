@@ -591,16 +591,11 @@ static void op_probe(http_op_t *op)
     action_1_perf(op->callback);
 }
 
-FSTRACE_DECL(ASYNCHTTP_OP_TIMEOUT_SPURIOUS, "UID=%64u");
 FSTRACE_DECL(ASYNCHTTP_OP_TIMEOUT_NOTIFY_OP, "UID=%64u");
 FSTRACE_DECL(ASYNCHTTP_OP_TIMEOUT_NOTIFY_STREAM, "UID=%64u");
 
 static void op_timeout(http_op_t *op)
 {
-    if (op->state == HTTP_OP_CLOSED) {
-        FSTRACE(ASYNCHTTP_OP_TIMEOUT_SPURIOUS, op->uid);
-        return;
-    }
     assert(op->timer_state == HTTP_OP_TIMER_RUNNING);
     set_timer_state(op, HTTP_OP_TIMER_EXPIRED);
     switch (op->state) {
