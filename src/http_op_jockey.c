@@ -88,12 +88,14 @@ void http_op_jockey_register_callback(http_op_jockey_t *jockey, action_1 action)
 {
     jockey->callback = action;
     http_op_register_callback(jockey->op, action);
+    bytestream_1_register_callback(jockey->content, action);
 }
 
 void http_op_jockey_unregister_callback(http_op_jockey_t *jockey)
 {
     jockey->callback = NULL_ACTION_1;
     http_op_unregister_callback(jockey->op);
+    bytestream_1_unregister_callback(jockey->content);
 }
 
 static const char *trace_state(void *state)
