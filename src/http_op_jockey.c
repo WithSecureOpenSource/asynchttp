@@ -54,7 +54,7 @@ struct http_op_jockey {
     action_1 callback;
 };
 
-FSTRACE_DECL(ASYNCHTTP_OP_JOCKEY_CREATE, "UID=%64u OP=%p");
+FSTRACE_DECL(ASYNCHTTP_OP_JOCKEY_CREATE, "UID=%64u OP=%p MAX-BODY-SIZE=%z");
 
 http_op_jockey_t *make_http_op_jockey(async_t *async,
                                       http_op_t *op,
@@ -67,15 +67,15 @@ http_op_jockey_t *make_http_op_jockey(async_t *async,
     jockey->op = op;
     jockey->content = drystream;
     jockey->response.body = make_byte_array(max_body_size);
-    FSTRACE(ASYNCHTTP_OP_JOCKEY_CREATE, jockey->uid, op);
+    FSTRACE(ASYNCHTTP_OP_JOCKEY_CREATE, jockey->uid, op, max_body_size);
     return jockey;
 }
 
-FSTRACE_DECL(ASYNCHTTP_OP_JOCKEY_DESTROY, "UID=%64u");
+FSTRACE_DECL(ASYNCHTTP_OP_JOCKEY_CLOSE, "UID=%64u");
 
 void http_op_jockey_close(http_op_jockey_t *jockey)
 {
-    FSTRACE(ASYNCHTTP_OP_JOCKEY_DESTROY, jockey->uid);
+    FSTRACE(ASYNCHTTP_OP_JOCKEY_CLOSE, jockey->uid);
     if (jockey->response.body)
         destroy_byte_array(jockey->response.body);
     bytestream_1_close(jockey->content);
@@ -84,15 +84,21 @@ void http_op_jockey_close(http_op_jockey_t *jockey)
     async_wound(jockey->async, jockey);
 }
 
+FSTRACE_DECL(ASYNCHTTP_OP_JOCKEY_REGISTER, "UID=%64u OBJ=%p ACT=%p");
+
 void http_op_jockey_register_callback(http_op_jockey_t *jockey, action_1 action)
 {
+    FSTRACE(ASYNCHTTP_OP_JOCKEY_REGISTER, jockey->uid, action.obj, action.act);
     jockey->callback = action;
     http_op_register_callback(jockey->op, action);
     bytestream_1_register_callback(jockey->content, action);
 }
 
+FSTRACE_DECL(ASYNCHTTP_OP_JOCKEY_UNREGISTER, "UID=%64u");
+
 void http_op_jockey_unregister_callback(http_op_jockey_t *jockey)
 {
+    FSTRACE(ASYNCHTTP_OP_JOCKEY_UNREGISTER, jockey->uid);
     jockey->callback = NULL_ACTION_1;
     http_op_unregister_callback(jockey->op);
     bytestream_1_unregister_callback(jockey->content);
@@ -135,8 +141,6 @@ static ssize_t read_frame(void *obj, void *buf, size_t count)
     return bytestream_1_read(*stream, buf, count);
 }
 
-FSTRACE_DECL(ASYNCHTTP_OP_JOCKEY_READ_CONTENT_FAIL, "UID=%64u ERROR=%e");
-
 static void probe_body(http_op_jockey_t *jockey)
 {
     ssize_t count = byte_array_append_stream(jockey->response.body,
@@ -154,7 +158,6 @@ static void probe_body(http_op_jockey_t *jockey)
     }
     if (count < 0) {
         if (errno != EAGAIN) {
-            FSTRACE(ASYNCHTTP_OP_JOCKEY_READ_CONTENT_FAIL, jockey->uid);
             jockey->error = errno;
             set_state(jockey, HTTP_OP_JOCKEY_FAILED);
         }
@@ -168,34 +171,25 @@ static void probe_body(http_op_jockey_t *jockey)
     errno = EAGAIN;
 }
 
-FSTRACE_DECL(ASYNCHTTP_OP_JOCKEY_RECEIVE_RESP_FAIL, "UID=%64u ERROR=%e");
-FSTRACE_DECL(ASYNCHTTP_OP_JOCKEY_RECEIVE_RESP_EOF, "UID=%64u");
 FSTRACE_DECL(ASYNCHTTP_OP_JOCKEY_GOT_RESPONSE,
              "UID=%64u RESP=%d EXPLANATION=%s");
-FSTRACE_DECL(ASYNCHTTP_OP_JOCKEY_GET_RESP_CONTENT_FAIL, "UID=%64u ERROR=%e");
 
 static void probe_headers(http_op_jockey_t *jockey)
 {
     errno = 0;
     const http_env_t *envelope = http_op_receive_response(jockey->op);
     if (!envelope) {
-        if (errno) {
-            if (errno == EAGAIN)
-                return;
-            FSTRACE(ASYNCHTTP_OP_JOCKEY_RECEIVE_RESP_FAIL, jockey->uid);
-        } else {
-            FSTRACE(ASYNCHTTP_OP_JOCKEY_RECEIVE_RESP_EOF, jockey->uid);
+        if (errno != EAGAIN) {
+            jockey->error = errno;
+            set_state(jockey, HTTP_OP_JOCKEY_FAILED);
         }
-        jockey->error = errno;
-        set_state(jockey, HTTP_OP_JOCKEY_FAILED);
         return;
     }
     FSTRACE(ASYNCHTTP_OP_JOCKEY_GOT_RESPONSE,
             jockey->uid,
-            http_env_get_code(jockey->response.envelope),
+            http_env_get_code(envelope),
             http_env_get_explanation(envelope));
     if (http_op_get_response_content(jockey->op, &jockey->content) < 0) {
-        FSTRACE(ASYNCHTTP_OP_JOCKEY_GET_RESP_CONTENT_FAIL, jockey->uid);
         jockey->error = errno;
         set_state(jockey, HTTP_OP_JOCKEY_FAILED);
         return;
@@ -206,6 +200,9 @@ static void probe_headers(http_op_jockey_t *jockey)
     async_execute(jockey->async, jockey->callback);
     errno = EAGAIN;
 }
+
+FSTRACE_DECL(ASYNCHTTP_OP_JOCKEY_RECEIVE_RESP, "UID=%64u");
+FSTRACE_DECL(ASYNCHTTP_OP_JOCKEY_RECEIVE_RESP_FAIL, "UID=%64u ERROR=%e");
 
 http_op_response_t *http_op_jockey_receive_response(http_op_jockey_t *jockey)
 {
@@ -221,13 +218,15 @@ http_op_response_t *http_op_jockey_receive_response(http_op_jockey_t *jockey)
     }
     switch (jockey->state) {
         case HTTP_OP_JOCKEY_READING_HEADERS:
-            return NULL;
         case HTTP_OP_JOCKEY_READING_BODY:
+            FSTRACE(ASYNCHTTP_OP_JOCKEY_RECEIVE_RESP_FAIL, jockey->uid);
             return NULL;
         case HTTP_OP_JOCKEY_FAILED:
             errno = jockey->error;
+            FSTRACE(ASYNCHTTP_OP_JOCKEY_RECEIVE_RESP_FAIL, jockey->uid);
             return NULL;
         case HTTP_OP_JOCKEY_DONE:
+            FSTRACE(ASYNCHTTP_OP_JOCKEY_RECEIVE_RESP, jockey->uid);
             return &jockey->response;
         default:
             errno = EINVAL;
