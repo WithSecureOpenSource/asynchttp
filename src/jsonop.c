@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <assert.h>
+#include <limits.h>
 #include <fstrace.h>
 #include <fsdyn/fsalloc.h>
 #include <fsdyn/charstr.h>
@@ -58,6 +59,8 @@ void jsonop_unregister_callback(jsonop_t *op)
 
 FSTRACE_DECL(ASYNCHTTP_JSONOP_CREATE,
              "UID=%64u PTR=%p ASYNC=%p CLIENT=%p URI=%s ENCODER=%p");
+FSTRACE_DECL(ASYNCHTTP_JSONOP_CREATE_FAIL_TOO_LARGE,
+             "CLIENT=%p URI=%s ENCODER=%p");
 
 jsonop_t *jsonop_make_request(async_t *async, http_client_t *client,
                               const char *uri, json_thing_t *request_body)
@@ -65,6 +68,15 @@ jsonop_t *jsonop_make_request(async_t *async, http_client_t *client,
     http_op_t *http_op = http_client_make_request(client, "POST", uri);
     if (!http_op)
         return NULL;
+    jsonencoder_t *encoder = json_encode(async, request_body);
+    size_t size = jsonencoder_size(encoder);
+    if (size > SSIZE_MAX) {
+        FSTRACE(ASYNCHTTP_JSONOP_CREATE_FAIL_TOO_LARGE, client, uri, encoder);
+        jsonencoder_close(encoder);
+        http_op_close(http_op);
+        return NULL;
+    }
+
     jsonop_t *op = fsalloc(sizeof *op);
     op->async = async;
     op->uid = fstrace_get_unique_id();
@@ -72,10 +84,7 @@ jsonop_t *jsonop_make_request(async_t *async, http_client_t *client,
     op->http_op = http_op;
     http_env_add_header(jsonop_get_request_envelope(op),
                         "Content-Type", "application/json");
-    jsonencoder_t *encoder = json_encode(op->async, request_body);
     FSTRACE(ASYNCHTTP_JSONOP_CREATE, op->uid, op, async, client, uri, encoder);
-    ssize_t size = jsonencoder_size(encoder);
-    assert(size >= 0);
     http_op_set_content(op->http_op, size,
                         jsonencoder_as_bytestream_1(encoder));
     op->state = JSONOP_REQUESTED;
