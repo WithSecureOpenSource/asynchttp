@@ -572,7 +572,7 @@ http_op_t *http_client_make_request(http_client_t *client,
     else op->host_entry = charstr_printf("%s:%u", op->host, op->port);
     op->request = make_http_env_request(op->method, op->path, "HTTP/1.1");
     http_env_add_header(op->request, "Host", op->host_entry);
-    if (op->proxy_authorization)
+    if (op->proxy_authorization && !op->https)
         http_env_add_header(op->request, "Proxy-Authorization",
                             op->proxy_authorization);
     op->request_content = emptystream;
@@ -748,6 +748,9 @@ static void op_send_http_connect(http_op_t *op)
     http_env_t *connect_request =
         make_http_env_request("CONNECT", op->host_entry, "HTTP/1.1");
     http_env_add_header(connect_request, "Host", op->host_entry);
+    if (op->proxy_authorization)
+        http_env_add_header(connect_request, "Proxy-Authorization",
+                            op->proxy_authorization);
     action_1 request_closed_cb = { connect_request, (act_1) destroy_http_env };
     farewellstream_t *fwstr =
         open_relaxed_farewellstream(op->client->async, emptystream,
