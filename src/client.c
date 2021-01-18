@@ -499,8 +499,8 @@ static bool learn_op_proxy(http_op_t *op, const char *uri)
     return true;
 }
 
-FSTRACE_DECL(ASYNCHTTP_OP_URI_SYNTAX_ERROR, "CLIENT=%64u METHOD=%s URI=%s");
-FSTRACE_DECL(ASYNCHTTP_OP_BAD_URI_SCHEME, "CLIENT=%64u METHOD=%s URI=%s");
+FSTRACE_DECL(ASYNCHTTP_OP_URI_SYNTAX_ERROR, "CLIENT=%64u URI=%s");
+FSTRACE_DECL(ASYNCHTTP_OP_BAD_URI_SCHEME, "CLIENT=%64u URI=%s");
 
 static bool parse_uri(http_op_t *op, const char *uri)
 {
