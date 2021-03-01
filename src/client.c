@@ -746,7 +746,7 @@ static void op_dispatch(http_op_t *op)
 static void op_send_http_connect(http_op_t *op)
 {
     assert(!op->connect_entry);
-    op->connect_entry = charstr_printf("%s:%d", op->host, op->port);
+    op->connect_entry = charstr_printf("%s:%u", op->host, op->port);
     http_env_t *connect_request =
         make_http_env_request("CONNECT", op->connect_entry, "HTTP/1.1");
     http_env_add_header(connect_request, "Host", op->connect_entry);
