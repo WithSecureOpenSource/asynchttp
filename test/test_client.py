@@ -60,7 +60,7 @@ def create_certificate(stem, CA):
     cert_path = stem + ".pem"
     config_path = stem + ".cnf"
     with open(config_path, "w") as f:
-        f.write("subjectAltName = DNS:127.0.0.1")
+        f.write("subjectAltName = IP:127.0.0.1")
     csr_path, key_path = create_csr(stem)
     cmd = (
         "openssl",
